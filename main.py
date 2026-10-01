@@ -14,7 +14,7 @@ import telebot
 # CONFIGURATION
 # ============================================================
 
-BOT_TOKEN = "8556582041:AAG5bxF-_GL8-9Jj3wj3XoWZVbc8Qf8Bkj0"
+BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"
 AUTHORIZED_USERS = [8657043630]
 
 TEMPLATE_PATH = "template.jpg"
