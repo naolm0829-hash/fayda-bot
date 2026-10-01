@@ -20,7 +20,7 @@ AUTHORIZED_USERS = [8657043630]
 TEMPLATE_PATH = "template.jpg"
 FONT_PATH = "AbyssinicaSIL-Regular.ttf"
 
-# A4 print resolution (300 DPI)
+# A4 dimensions @ 300 DPI
 A4_WIDTH = 2480
 A4_HEIGHT = 3508
 TOP_MARGIN = 300
@@ -49,7 +49,7 @@ def authorized(user_id):
 
 
 # ============================================================
-# 1. ACCURATE DATA EXTRACTION FROM PDF
+# 1. EXTRACT DATA & ASSETS FROM PDF
 # ============================================================
 
 def extract_fayda_data(pdf_path, work_dir):
@@ -66,11 +66,10 @@ def extract_fayda_data(pdf_path, work_dir):
         "woreda": ""
     }
 
-    # Extract text from PDF
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            full_text = pdf.pages[0].extract_text() or ""
-            lines = [line.strip() for line in full_text.split("\n") if line.strip()]
+            text = pdf.pages[0].extract_text() or ""
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
             
             for i, line in enumerate(lines):
                 if "Full Name" in line or "ሙሉ ስም" in line:
@@ -96,7 +95,7 @@ def extract_fayda_data(pdf_path, work_dir):
     except Exception as e:
         print("Text parsing warning:", e)
 
-    # Fallback default values if extraction missed specific field
+    # Defaults fallback if pdfplumber misses an individual string
     if not data["name_am"]: data["name_am"] = "ሄሌን ሰርጌ በላይ"
     if not data["name_en"]: data["name_en"] = "Helen Serge Belay"
     if not data["dob"]:     data["dob"] = "26/12/2006 | 2014/Sep/01"
@@ -108,7 +107,7 @@ def extract_fayda_data(pdf_path, work_dir):
     if not data["subcity"]: data["subcity"] = "ባሌ | Bale"
     if not data["woreda"]:  data["woreda"] = "ደሎ መና | Delo Mena"
 
-    # Extract images (Photo and QR code)
+    # Extract high-res Photo and QR Code images
     doc = fitz.open(pdf_path)
     page = doc[0]
     
@@ -147,7 +146,7 @@ def extract_fayda_data(pdf_path, work_dir):
 
 
 # ============================================================
-# 2. CALCULATED DRAWING ON TEMPLATE
+# 2. DYNAMICALLY CLEAN & FILL TEMPLATE
 # ============================================================
 
 def build_custom_template_id(data, photo_path, qr_path, work_dir):
@@ -155,70 +154,61 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir):
         raise FileNotFoundError("template.jpg file missing from repository!")
 
     template = Image.open(TEMPLATE_PATH).convert("RGB")
+    tw, th = template.size
     draw = ImageDraw.Draw(template)
 
-    # Clean fonts
-    font_bold = ImageFont.truetype(FONT_PATH, 16)
-    font_medium = ImageFont.truetype(FONT_PATH, 13)
-    font_small = ImageFont.truetype(FONT_PATH, 11)
+    # Base background fill color matching Fayda card body
+    card_bg_color = (235, 247, 238)
+
+    # ------------------------------------------------------------
+    # DYNAMIC SAMPLE CLEANUP (Erases sample images/text)
+    # ------------------------------------------------------------
+    # Front photo area
+    draw.rectangle([int(tw*0.015), int(th*0.20), int(tw*0.19), int(th*0.90)], fill=card_bg_color)
+    # Front text area
+    draw.rectangle([int(tw*0.19), int(th*0.22), int(tw*0.37), int(th*0.80)], fill=card_bg_color)
+    # Small photo
+    draw.rectangle([int(tw*0.37), int(th*0.68), int(tw*0.46), int(th*0.95)], fill=card_bg_color)
+    # Back text area
+    draw.rectangle([int(tw*0.53), int(th*0.08), int(tw*0.72), int(th*0.85)], fill=card_bg_color)
+    # Back QR area
+    draw.rectangle([int(tw*0.73), int(th*0.05), int(tw*0.99), int(th*0.85)], fill=card_bg_color)
+
+    # Load Fonts
+    font_bold = ImageFont.truetype(FONT_PATH, int(th*0.035))
+    font_medium = ImageFont.truetype(FONT_PATH, int(th*0.028))
+    font_small = ImageFont.truetype(FONT_PATH, int(th*0.024))
 
     text_color = (0, 0, 0)
 
-    # ------------------------------------------------------------
-    # CLEAN OLD SAMPLE TEXT (Cover with white/matching rectangles)
-    # ------------------------------------------------------------
-    # Front text area box cover
-    draw.rectangle([180, 80, 480, 310], fill=(255, 255, 255))
-    # Back text area box cover
-    draw.rectangle([530, 40, 720, 290], fill=(240, 248, 240))
+    # --- FRONT SIDE PLACEHOLDERS ---
+    draw.text((int(tw*0.195), int(th*0.23)), data["name_am"], fill=text_color, font=font_bold)
+    draw.text((int(tw*0.195), int(th*0.28)), data["name_en"], fill=text_color, font=font_medium)
+    draw.text((int(tw*0.195), int(th*0.38)), data["dob"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.195), int(th*0.48)), data["sex"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.195), int(th*0.60)), data["fan"], fill=text_color, font=font_bold)
 
-    # ------------------------------------------------------------
-    # FRONT SIDE DRAWING (Exact Coordinates)
-    # ------------------------------------------------------------
-    # Name
-    draw.text((190, 85), data["name_am"], fill=text_color, font=font_bold)
-    draw.text((190, 105), data["name_en"], fill=text_color, font=font_medium)
-    
-    # DOB
-    draw.text((190, 145), data["dob"], fill=text_color, font=font_small)
-    
-    # Sex
-    draw.text((190, 185), data["sex"], fill=text_color, font=font_small)
-    
-    # FAN Number
-    draw.text((190, 235), data["fan"], fill=text_color, font=font_bold)
+    # --- BACK SIDE PLACEHOLDERS ---
+    draw.text((int(tw*0.54), int(th*0.12)), data["phone"], fill=text_color, font=font_medium)
+    draw.text((int(tw*0.54), int(th*0.24)), data["region"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.54), int(th*0.36)), data["subcity"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.54), int(th*0.48)), data["woreda"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.54), int(th*0.64)), data["fin"], fill=text_color, font=font_bold)
 
-    # ------------------------------------------------------------
-    # BACK SIDE DRAWING (Exact Coordinates)
-    # ------------------------------------------------------------
-    # Phone Number
-    draw.text((535, 45), data["phone"], fill=text_color, font=font_medium)
-    
-    # Region / Subcity / Woreda
-    draw.text((535, 95), data["region"], fill=text_color, font=font_small)
-    draw.text((535, 145), data["subcity"], fill=text_color, font=font_small)
-    draw.text((535, 195), data["woreda"], fill=text_color, font=font_small)
-    
-    # FIN Number
-    draw.text((535, 255), data["fin"], fill=text_color, font=font_bold)
-
-    # ------------------------------------------------------------
-    # OVERLAY PROFILE PHOTO
-    # ------------------------------------------------------------
+    # --- PHOTO FRAME OVERLAY ---
     if os.path.exists(photo_path):
         photo = Image.open(photo_path).convert("RGBA")
-        # Exact photo box sizing
-        photo = photo.resize((125, 155), Image.Resampling.LANCZOS)
-        template.paste(photo, (30, 80), photo if photo.mode == 'RGBA' else None)
+        photo_w = int(tw * 0.175)
+        photo_h = int(th * 0.68)
+        photo = photo.resize((photo_w, photo_h), Image.Resampling.LANCZOS)
+        template.paste(photo, (int(tw*0.015), int(th*0.21)), photo if photo.mode == 'RGBA' else None)
 
-    # ------------------------------------------------------------
-    # OVERLAY QR CODE
-    # ------------------------------------------------------------
+    # --- QR CODE OVERLAY ---
     if os.path.exists(qr_path):
         qr = Image.open(qr_path).convert("RGBA")
-        # Exact QR box sizing
-        qr = qr.resize((210, 210), Image.Resampling.LANCZOS)
-        template.paste(qr, (720, 45), qr if qr.mode == 'RGBA' else None)
+        qr_size = int(th * 0.78)
+        qr = qr.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
+        template.paste(qr, (int(tw*0.73), int(th*0.06)), qr if qr.mode == 'RGBA' else None)
 
     output_card = os.path.join(work_dir, "final_id_card.png")
     template.save(output_card, "PNG", dpi=(300, 300))
@@ -226,7 +216,7 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir):
 
 
 # ============================================================
-# 3. CREATE PRINT-READY A4
+# 3. PRINT-READY A4 CANVAS
 # ============================================================
 
 def create_a4_sheet(card_image_path, output_pdf):
@@ -256,7 +246,7 @@ def start_command(message):
     if not authorized(message.from_user.id):
         bot.reply_to(message, "⛔ Access restricted.")
         return
-    bot.send_message(message.chat.id, "🖨️ *Fayda Card Bot Active*\nSend a PDF file to convert.")
+    bot.send_message(message.chat.id, "🖨️️ *Fayda Card Bot Active*\nSend a PDF file to process.")
 
 
 @bot.message_handler(content_types=["document"])
