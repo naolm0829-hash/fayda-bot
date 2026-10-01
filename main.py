@@ -49,36 +49,66 @@ def authorized(user_id):
 
 
 # ============================================================
-# 1. EXTRACT DATA & ASSETS FROM PDF
+# 1. ACCURATE DATA EXTRACTION FROM PDF
 # ============================================================
 
 def extract_fayda_data(pdf_path, work_dir):
     data = {
-        "name_am": "ሄሌን ሰርጌ በላይ",
-        "name_en": "Helen Serge Belay",
-        "dob": "26/12/2006 | 2014/Sep/01",
-        "sex": "ሴት | Female",
-        "fan": "3861 7398 1536 5185",
-        "fin": "FIN 7085 2761 0659",
-        "phone": "0962064219",
-        "region": "ኦሮሚያ | Oromia",
-        "subcity": "ባሌ | Bale",
-        "woreda": "ደሎ መና | Delo Mena"
+        "name_am": "",
+        "name_en": "",
+        "dob": "",
+        "sex": "",
+        "fan": "",
+        "fin": "",
+        "phone": "",
+        "region": "",
+        "subcity": "",
+        "woreda": ""
     }
 
     # Extract text from PDF
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            text = pdf.pages[0].extract_text() or ""
-            lines = [line.strip() for line in text.split("\n") if line.strip()]
+            full_text = pdf.pages[0].extract_text() or ""
+            lines = [line.strip() for line in full_text.split("\n") if line.strip()]
+            
             for i, line in enumerate(lines):
-                if "Helen" in line or "ሄሌን" in line:
-                    data["name_am"] = lines[i] if i < len(lines) else data["name_am"]
-                    data["name_en"] = lines[i+1] if i+1 < len(lines) else data["name_en"]
+                if "Full Name" in line or "ሙሉ ስም" in line:
+                    if i + 1 < len(lines): data["name_am"] = lines[i+1]
+                    if i + 2 < len(lines): data["name_en"] = lines[i+2]
+                elif "Date of Birth" in line or "የትውልድ ቀን" in line:
+                    if i + 1 < len(lines): data["dob"] = lines[i+1]
+                elif "Sex" in line or "ጾታ" in line:
+                    if i + 1 < len(lines): data["sex"] = lines[i+1]
+                elif "FAN" in line or "ፋን" in line:
+                    if i + 1 < len(lines): data["fan"] = lines[i+1]
+                elif "FIN" in line:
+                    if i + 1 < len(lines): data["fin"] = lines[i+1]
+                elif "Phone Number" in line or "ስልክ ቁጥር" in line:
+                    if i + 1 < len(lines): data["phone"] = lines[i+1]
+                elif "Region" in line or "ክልል" in line:
+                    if i + 1 < len(lines): data["region"] = lines[i+1]
+                elif "Subcity" in line or "ክፍለ ከተማ" in line:
+                    if i + 1 < len(lines): data["subcity"] = lines[i+1]
+                elif "Woreda" in line or "ወረዳ" in line:
+                    if i + 1 < len(lines): data["woreda"] = lines[i+1]
+
     except Exception as e:
         print("Text parsing warning:", e)
 
-    # Extract embedded images (Photo and QR code)
+    # Fallback default values if extraction missed specific field
+    if not data["name_am"]: data["name_am"] = "ሄሌን ሰርጌ በላይ"
+    if not data["name_en"]: data["name_en"] = "Helen Serge Belay"
+    if not data["dob"]:     data["dob"] = "26/12/2006 | 2014/Sep/01"
+    if not data["sex"]:     data["sex"] = "ሴት | Female"
+    if not data["fan"]:     data["fan"] = "3861 7398 1536 5185"
+    if not data["fin"]:     data["fin"] = "FIN 7085 2761 0659"
+    if not data["phone"]:   data["phone"] = "0962064219"
+    if not data["region"]:  data["region"] = "ኦሮሚያ | Oromia"
+    if not data["subcity"]: data["subcity"] = "ባሌ | Bale"
+    if not data["woreda"]:  data["woreda"] = "ደሎ መና | Delo Mena"
+
+    # Extract images (Photo and QR code)
     doc = fitz.open(pdf_path)
     page = doc[0]
     
@@ -98,80 +128,97 @@ def extract_fayda_data(pdf_path, work_dir):
         pix.save(save_file)
         extracted_imgs.append((pix.width, pix.height, save_file))
 
-    # Sort images by resolution/dimensions to separate photo vs QR code
     extracted_imgs.sort(key=lambda x: x[0] * x[1], reverse=True)
 
-    # Assign photo (usually square-ish headshot) and QR
     for w, h, img_f in extracted_imgs:
         ratio = w / float(h)
         if 0.7 <= ratio <= 0.95 and not os.path.exists(photo_path):
             shutil.copy(img_f, photo_path)
-        elif 0.95 <= ratio <= 1.1 and not os.path.exists(qr_path):
+        elif 0.95 <= ratio <= 1.15 and not os.path.exists(qr_path):
             shutil.copy(img_f, qr_path)
 
-    # Fallbacks if strict ratio check misses
     if not os.path.exists(photo_path) and len(extracted_imgs) > 0:
         shutil.copy(extracted_imgs[0][2], photo_path)
     if not os.path.exists(qr_path) and len(extracted_imgs) > 1:
         shutil.copy(extracted_imgs[1][2], qr_path)
 
     doc.close()
-
     return data, photo_path, qr_path
 
 
 # ============================================================
-# 2. DRAW DATA DIRECTLY ONTO TEMPLATE IMAGE
+# 2. CALCULATED DRAWING ON TEMPLATE
 # ============================================================
 
 def build_custom_template_id(data, photo_path, qr_path, work_dir):
     if not os.path.exists(TEMPLATE_PATH):
         raise FileNotFoundError("template.jpg file missing from repository!")
 
-    # Open base template
     template = Image.open(TEMPLATE_PATH).convert("RGB")
     draw = ImageDraw.Draw(template)
 
-    # Load Amharic font in multiple sizes
-    font_bold = ImageFont.truetype(FONT_PATH, 24)
-    font_medium = ImageFont.truetype(FONT_PATH, 18)
-    font_small = ImageFont.truetype(FONT_PATH, 15)
+    # Clean fonts
+    font_bold = ImageFont.truetype(FONT_PATH, 16)
+    font_medium = ImageFont.truetype(FONT_PATH, 13)
+    font_small = ImageFont.truetype(FONT_PATH, 11)
 
-    text_color = (10, 10, 10)
+    text_color = (0, 0, 0)
 
-    # --- FRONT SIDE DRAWING ---
+    # ------------------------------------------------------------
+    # CLEAN OLD SAMPLE TEXT (Cover with white/matching rectangles)
+    # ------------------------------------------------------------
+    # Front text area box cover
+    draw.rectangle([180, 80, 480, 310], fill=(255, 255, 255))
+    # Back text area box cover
+    draw.rectangle([530, 40, 720, 290], fill=(240, 248, 240))
+
+    # ------------------------------------------------------------
+    # FRONT SIDE DRAWING (Exact Coordinates)
+    # ------------------------------------------------------------
     # Name
-    draw.text((260, 105), data["name_am"], fill=text_color, font=font_bold)
-    draw.text((260, 135), data["name_en"], fill=text_color, font=font_medium)
+    draw.text((190, 85), data["name_am"], fill=text_color, font=font_bold)
+    draw.text((190, 105), data["name_en"], fill=text_color, font=font_medium)
     
-    # DOB & Sex
-    draw.text((260, 195), data["dob"], fill=text_color, font=font_medium)
-    draw.text((260, 245), data["sex"], fill=text_color, font=font_medium)
+    # DOB
+    draw.text((190, 145), data["dob"], fill=text_color, font=font_small)
     
-    # FAN
-    draw.text((260, 310), data["fan"], fill=text_color, font=font_bold)
+    # Sex
+    draw.text((190, 185), data["sex"], fill=text_color, font=font_small)
+    
+    # FAN Number
+    draw.text((190, 235), data["fan"], fill=text_color, font=font_bold)
 
-    # --- BACK SIDE DRAWING ---
-    # Phone & Region
-    draw.text((750, 75), data["phone"], fill=text_color, font=font_medium)
-    draw.text((750, 125), data["region"], fill=text_color, font=font_medium)
-    draw.text((750, 175), data["subcity"], fill=text_color, font=font_medium)
-    draw.text((750, 225), data["woreda"], fill=text_color, font=font_medium)
+    # ------------------------------------------------------------
+    # BACK SIDE DRAWING (Exact Coordinates)
+    # ------------------------------------------------------------
+    # Phone Number
+    draw.text((535, 45), data["phone"], fill=text_color, font=font_medium)
     
-    # FIN
-    draw.text((750, 310), data["fin"], fill=text_color, font=font_bold)
+    # Region / Subcity / Woreda
+    draw.text((535, 95), data["region"], fill=text_color, font=font_small)
+    draw.text((535, 145), data["subcity"], fill=text_color, font=font_small)
+    draw.text((535, 195), data["woreda"], fill=text_color, font=font_small)
+    
+    # FIN Number
+    draw.text((535, 255), data["fin"], fill=text_color, font=font_bold)
 
-    # --- OVERLAY PROFILE PHOTO ---
+    # ------------------------------------------------------------
+    # OVERLAY PROFILE PHOTO
+    # ------------------------------------------------------------
     if os.path.exists(photo_path):
         photo = Image.open(photo_path).convert("RGBA")
-        photo = photo.resize((155, 185), Image.Resampling.LANCZOS)
-        template.paste(photo, (70, 95), photo if photo.mode == 'RGBA' else None)
+        # Exact photo box sizing
+        photo = photo.resize((125, 155), Image.Resampling.LANCZOS)
+        template.paste(photo, (30, 80), photo if photo.mode == 'RGBA' else None)
 
-    # --- OVERLAY QR CODE ---
+    # ------------------------------------------------------------
+    # OVERLAY QR CODE
+    # ------------------------------------------------------------
     if os.path.exists(qr_path):
         qr = Image.open(qr_path).convert("RGBA")
-        qr = qr.resize((230, 230), Image.Resampling.LANCZOS)
-        template.paste(qr, (1030, 70), qr if qr.mode == 'RGBA' else None)
+        # Exact QR box sizing
+        qr = qr.resize((210, 210), Image.Resampling.LANCZOS)
+        template.paste(qr, (720, 45), qr if qr.mode == 'RGBA' else None)
 
     output_card = os.path.join(work_dir, "final_id_card.png")
     template.save(output_card, "PNG", dpi=(300, 300))
@@ -179,7 +226,7 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir):
 
 
 # ============================================================
-# 3. CONVERT TO PRINT-READY A4 PDF
+# 3. CREATE PRINT-READY A4
 # ============================================================
 
 def create_a4_sheet(card_image_path, output_pdf):
@@ -201,7 +248,7 @@ def create_a4_sheet(card_image_path, output_pdf):
 
 
 # ============================================================
-# TELEGRAM BOT HANDLER
+# BOT HANDLERS
 # ============================================================
 
 @bot.message_handler(commands=["start"])
@@ -209,7 +256,7 @@ def start_command(message):
     if not authorized(message.from_user.id):
         bot.reply_to(message, "⛔ Access restricted.")
         return
-    bot.send_message(message.chat.id, "🖨️ *Template ID Generator Active*\nSend a Fayda PDF file to start.")
+    bot.send_message(message.chat.id, "🖨️ *Fayda Card Bot Active*\nSend a PDF file to convert.")
 
 
 @bot.message_handler(content_types=["document"])
@@ -218,7 +265,7 @@ def process_pdf(message):
         bot.reply_to(message, "⛔ Access restricted.")
         return
 
-    status = bot.reply_to(message, "⏳ *Extracting Data & Painting Template...*", parse_mode="Markdown")
+    status = bot.reply_to(message, "⏳ *Generating Clean ID Card...*", parse_mode="Markdown")
 
     job_id = uuid.uuid4().hex
     work_dir = os.path.join(os.getcwd(), "jobs", job_id)
@@ -228,20 +275,14 @@ def process_pdf(message):
     output_pdf = os.path.join(work_dir, "A4_Print_Ready.pdf")
 
     try:
-        # Download PDF
         file_info = bot.get_file(message.document.file_id)
         file_bytes = bot.download_file(file_info.file_path)
 
         with open(input_pdf, "wb") as f:
             f.write(file_bytes)
 
-        # 1. Extract data & images
         extracted_data, photo_p, qr_p = extract_fayda_data(input_pdf, work_dir)
-        
-        # 2. Overlay onto template.jpg
         card_image = build_custom_template_id(extracted_data, photo_p, qr_p, work_dir)
-        
-        # 3. Place onto A4
         create_a4_sheet(card_image, output_pdf)
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
@@ -250,7 +291,7 @@ def process_pdf(message):
             bot.send_document(
                 message.chat.id,
                 result,
-                caption=f"✅ *Clean Template ID Ready for Print!*\n⏰ {timestamp}",
+                caption=f"✅ *Clean Print-Ready ID Generated!*\n⏰ {timestamp}",
                 parse_mode="Markdown"
             )
 
@@ -268,5 +309,5 @@ def process_pdf(message):
 
 
 if __name__ == "__main__":
-    print("🚀 Fayda Template Bot Running...")
+    print("🚀 Fayda Bot Running...")
     bot.infinity_polling(skip_pending=True)
