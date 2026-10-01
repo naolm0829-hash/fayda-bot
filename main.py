@@ -299,5 +299,19 @@ def process_pdf(message):
 
 
 if __name__ == "__main__":
-    print("🚀 Fayda Bot Running...")
-    bot.infinity_polling(skip_pending=True)
+    import time
+    print("🚀 Cleaning previous Telegram sessions...")
+    try:
+        bot.remove_webhook()
+    except Exception:
+        pass
+    
+    time.sleep(2)  # Give Telegram server time to register disconnection
+    print("🚀 Fayda Bot Active & Running...")
+    
+    bot.infinity_polling(
+        skip_pending=True,
+        timeout=60,
+        long_polling_timeout=60,
+        restart_on_change=False
+    )
