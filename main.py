@@ -44,7 +44,7 @@ def ensure_amharic_font():
 ensure_amharic_font()
 
 bot = telebot.TeleBot(BOT_TOKEN)
-history_records = []
+
 
 def authorized(user_id):
     return user_id in AUTHORIZED_USERS
@@ -56,7 +56,7 @@ def authorized(user_id):
 
 def process_fayda(pdf_path, work_dir):
     """
-    Renders high-res cards from PDF and overlays dynamic elements cleanly.
+    Renders high-res cards from PDF with precise cropped card boundaries.
     """
     doc = fitz.open(pdf_path)
     page = doc[0]
@@ -73,14 +73,14 @@ def process_fayda(pdf_path, work_dir):
     full_img = Image.open(rendered_path)
     w, h = full_img.size
 
-    # Crop Front and Back cards directly from Fayda layout
-    front_box = (int(w * 0.535), int(h * 0.08), int(w * 0.985), int(h * 0.485))
-    back_box  = (int(w * 0.535), int(h * 0.505), int(w * 0.985), int(h * 0.91))
+    # Precise crop coordinates for Fayda layout (Front & Back)
+    front_box = (int(w * 0.185), int(h * 0.18), int(w * 0.46), int(h * 0.58))
+    back_box  = (int(w * 0.62),  int(h * 0.18), int(w * 0.895), int(h * 0.58))
 
     front_img = full_img.crop(front_box)
     back_img  = full_img.crop(back_box)
 
-    # Clean combined side-by-side card canvas
+    # Combine side-by-side on clean canvas
     card_w, card_h = front_img.size
     gap = 40
     combined = Image.new("RGB", (card_w * 2 + gap, card_h), (255, 255, 255))
@@ -116,7 +116,7 @@ def create_a4_sheet(card_image_path, output_pdf):
 
 
 # ============================================================
-# BOT HANDLER
+# BOT HANDLERS
 # ============================================================
 
 @bot.message_handler(commands=["start"])
