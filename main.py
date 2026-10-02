@@ -204,7 +204,6 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False)
     tw, th = template.size
     draw = ImageDraw.Draw(template)
 
-    # Scaled fonts based on template resolution
     base_size = int(th * 0.032)
     font_large = ImageFont.truetype(FONT_PATH, int(base_size * 1.25))
     font_medium = ImageFont.truetype(FONT_PATH, base_size)
@@ -213,45 +212,36 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False)
     text_color = (10, 10, 10)
 
     # FRONT CARD OVERLAYS
-    # Photo placement
     if os.path.exists(photo_path):
         photo = Image.open(photo_path).convert("RGBA")
         pw, ph = int(tw * 0.165), int(th * 0.620)
         photo = photo.resize((pw, ph), Image.Resampling.LANCZOS)
         template.paste(photo, (int(tw * 0.022), int(th * 0.220)), photo if photo.mode == 'RGBA' else None)
 
-    # Names (Amharic & English)
     if data["name_am"]:
         draw.text((int(tw * 0.205), int(th * 0.225)), data["name_am"], fill=text_color, font=font_large)
     if data["name_en"]:
         draw.text((int(tw * 0.205), int(th * 0.280)), data["name_en"], fill=text_color, font=font_medium)
 
-    # Date of Birth
     if data["dob"]:
         draw.text((int(tw * 0.205), int(th * 0.380)), data["dob"], fill=text_color, font=font_medium)
 
-    # Sex
     if data["sex"]:
         draw.text((int(tw * 0.205), int(th * 0.480)), data["sex"], fill=text_color, font=font_medium)
 
-    # FAN Number
     if data["fan"]:
         draw.text((int(tw * 0.205), int(th * 0.620)), data["fan"], fill=text_color, font=font_large)
 
-
     # BACK CARD OVERLAYS
-    # QR Code
     if os.path.exists(qr_path):
         qr = Image.open(qr_path).convert("RGBA")
         qw = int(tw * 0.230)
         qr = qr.resize((qw, qw), Image.Resampling.LANCZOS)
         template.paste(qr, (int(tw * 0.745), int(th * 0.080)), qr if qr.mode == 'RGBA' else None)
 
-    # Phone Number
     if data["phone"]:
         draw.text((int(tw * 0.540), int(th * 0.150)), data["phone"], fill=text_color, font=font_medium)
 
-    # Region / Subcity / Woreda
     if data["region"]:
         draw.text((int(tw * 0.540), int(th * 0.270)), data["region"], fill=text_color, font=font_small)
     if data["subcity"]:
@@ -259,7 +249,6 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False)
     if data["woreda"]:
         draw.text((int(tw * 0.540), int(th * 0.470)), data["woreda"], fill=text_color, font=font_small)
 
-    # FIN
     if data["fin"]:
         draw.text((int(tw * 0.540), int(th * 0.650)), data["fin"], fill=text_color, font=font_large)
 
@@ -444,4 +433,4 @@ if __name__ == "__main__":
             bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
         except Exception as e:
             print(f"⚠️ Proxy connection drop/error: {e}. Re-establishing connection in 5 seconds...")
-            time.sleep(5)            time.sleep(5)
+            time.sleep(5)
