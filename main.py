@@ -4,6 +4,7 @@ import uuid
 import datetime
 import urllib.request
 import time
+import re
 
 import fitz  # PyMuPDF
 import pdfplumber
@@ -18,11 +19,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 # ============================================================
 
 BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"
-
-# Authorized Users (supports both integer and string checks)
 AUTHORIZED_USERS = [8657043630, 7541697159, "8657043630", "7541697159"]
-
-# Your Archive Channel ID
 ARCHIVE_CHANNEL_ID = -1003928857630
 
 TEMPLATE_PATH = "template.jpg"
@@ -40,16 +37,11 @@ PENDING_JOBS = {}
 # PYTHONANYWHERE PROXY SETUP
 # ============================================================
 
-# Configure proxy settings for PythonAnywhere free account servers
 apihelper.proxy = {
     'http': 'http://proxy.server:3128',
     'https': 'http://proxy.server:3128'
 }
 
-
-# ============================================================
-# AUTOMATIC FONT DOWNLOADER
-# ============================================================
 
 def ensure_amharic_font():
     if not os.path.exists(FONT_PATH):
@@ -70,7 +62,7 @@ def authorized(user_id):
 
 
 # ============================================================
-# 1. EXTRACT DATA & ASSETS FROM PDF
+# RELIABLE FAYDA PDF TEXT PARSER
 # ============================================================
 
 def extract_fayda_data(pdf_path, work_dir):
@@ -88,37 +80,84 @@ def extract_fayda_data(pdf_path, work_dir):
     }
 
     try:
-        with pdfplumber.open(pdf_path) as pdf:
-            text = pdf.pages[0].extract_text() or ""
-            lines = [line.strip() for line in text.split("\n") if line.strip()]
-            
-            for i, line in enumerate(lines):
-                if "Full Name" in line or "ሙሉ ስም" in line:
-                    if i + 1 < len(lines): data["name_am"] = lines[i+1]
-                    if i + 2 < len(lines): data["name_en"] = lines[i+2]
-                elif "Date of Birth" in line or "የትውልድ ቀን" in line:
-                    if i + 1 < len(lines): data["dob"] = lines[i+1]
-                elif "Sex" in line or "ጾታ" in line:
-                    if i + 1 < len(lines): data["sex"] = lines[i+1]
-                elif "FAN" in line or "ፋን" in line:
-                    if i + 1 < len(lines): data["fan"] = lines[i+1]
-                elif "FIN" in line:
-                    if i + 1 < len(lines): data["fin"] = lines[i+1]
-                elif "Phone Number" in line or "ስልክ ቁጥር" in line:
-                    if i + 1 < len(lines): data["phone"] = lines[i+1]
-                elif "Region" in line or "ክልል" in line:
-                    if i + 1 < len(lines): data["region"] = lines[i+1]
-                elif "Subcity" in line or "ክፍለ ከተማ" in line:
-                    if i + 1 < len(lines): data["subcity"] = lines[i+1]
-                elif "Woreda" in line or "ወረዳ" in line:
-                    if i + 1 < len(lines): data["woreda"] = lines[i+1]
+        # Extract full raw text using PyMuPDF first
+        doc = fitz.open(pdf_path)
+        full_text = ""
+        for page in doc:
+            full_text += page.get_text() + "\n"
+        doc.close()
+
+        lines = [l.strip() for l in full_text.splitlines() if l.strip()]
+
+        # Alternative fallback via pdfplumber
+        if len(lines) < 5:
+            with pdfplumber.open(pdf_path) as pdf:
+                plumber_text = pdf.pages[0].extract_text() or ""
+                lines = [l.strip() for l in plumber_text.splitlines() if l.strip()]
+
+        # Parse data dynamically
+        for idx, line in enumerate(lines):
+            # FAN (16 digit format or preceded by FAN)
+            if "FAN" in line or "FCN" in line or "ፋን" in line:
+                fan_match = re.search(r'\d{4}\s?\d{4}\s?\d{4}\s?\d{4}', line)
+                if fan_match:
+                    data["fan"] = fan_match.group(0)
+                elif idx + 1 < len(lines):
+                    data["fan"] = lines[idx+1]
+
+            # FIN
+            elif "FIN" in line:
+                fin_match = re.search(r'[A-Z0-9]{8,12}', line)
+                if fin_match:
+                    data["fin"] = fin_match.group(0)
+                elif idx + 1 < len(lines):
+                    data["fin"] = lines[idx+1]
+
+            # Date of birth
+            elif "Date of Birth" in line or "የትውልድ ቀን" in line:
+                dob_match = re.search(r'\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}', line)
+                if dob_match:
+                    data["dob"] = dob_match.group(0)
+                elif idx + 1 < len(lines):
+                    data["dob"] = lines[idx+1]
+
+            # Sex / Gender
+            elif "Sex" in line or "ጾታ" in line:
+                if "Male" in line or "ወንድ" in line or "M" in line.split():
+                    data["sex"] = "ወንድ / Male"
+                elif "Female" in line or "ሴት" in line or "F" in line.split():
+                    data["sex"] = "ሴት / Female"
+                elif idx + 1 < len(lines):
+                    data["sex"] = lines[idx+1]
+
+            # Phone Number
+            elif "Phone" in line or "ስልክ" in line:
+                phone_match = re.search(r'(\+?251|0)\d{8,9}', line)
+                if phone_match:
+                    data["phone"] = phone_match.group(0)
+                elif idx + 1 < len(lines):
+                    data["phone"] = lines[idx+1]
+
+            # Address fields
+            elif "Region" in line or "ክልል" in line:
+                if idx + 1 < len(lines): data["region"] = lines[idx+1]
+            elif "Subcity" in line or "ክፍለ ከተማ" in line:
+                if idx + 1 < len(lines): data["subcity"] = lines[idx+1]
+            elif "Woreda" in line or "ወረዳ" in line:
+                if idx + 1 < len(lines): data["woreda"] = lines[idx+1]
+
+        # Extract names if present
+        for idx, line in enumerate(lines):
+            if "Full Name" in line or "ሙሉ ስም" in line:
+                if idx + 1 < len(lines): data["name_am"] = lines[idx+1]
+                if idx + 2 < len(lines): data["name_en"] = lines[idx+2]
 
     except Exception as e:
-        print("Text parsing warning:", e)
+        print("Parsing Exception:", e)
 
+    # Image Extraction (Photo & QR)
     doc = fitz.open(pdf_path)
     page = doc[0]
-    
     photo_path = os.path.join(work_dir, "photo.png")
     qr_path = os.path.join(work_dir, "qr.png")
 
@@ -154,7 +193,7 @@ def extract_fayda_data(pdf_path, work_dir):
 
 
 # ============================================================
-# 2. DRAW ON BLANK TEMPLATE
+# TEMPLATE BUILDER WITH EXACT PIXEL POSITIONS
 # ============================================================
 
 def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False):
@@ -165,49 +204,64 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False)
     tw, th = template.size
     draw = ImageDraw.Draw(template)
 
-    font_bold = ImageFont.truetype(FONT_PATH, int(th * 0.042))
-    font_medium = ImageFont.truetype(FONT_PATH, int(th * 0.034))
-    font_small = ImageFont.truetype(FONT_PATH, int(th * 0.028))
+    # Scaled fonts based on template resolution
+    base_size = int(th * 0.032)
+    font_large = ImageFont.truetype(FONT_PATH, int(base_size * 1.25))
+    font_medium = ImageFont.truetype(FONT_PATH, base_size)
+    font_small = ImageFont.truetype(FONT_PATH, int(base_size * 0.85))
 
-    text_color = (20, 20, 20)
+    text_color = (10, 10, 10)
 
-    # FRONT SIDE TEXT
-    if data["name_am"]:
-        draw.text((int(tw * 0.192), int(th * 0.250)), data["name_am"], fill=text_color, font=font_bold)
-    if data["name_en"]:
-        draw.text((int(tw * 0.192), int(th * 0.300)), data["name_en"], fill=text_color, font=font_medium)
-    if data["dob"]:
-        draw.text((int(tw * 0.192), int(th * 0.430)), data["dob"], fill=text_color, font=font_small)
-    if data["sex"]:
-        draw.text((int(tw * 0.192), int(th * 0.540)), data["sex"], fill=text_color, font=font_small)
-    if data["fan"]:
-        draw.text((int(tw * 0.192), int(th * 0.690)), data["fan"], fill=text_color, font=font_bold)
-
-    # BACK SIDE TEXT
-    if data["phone"]:
-        draw.text((int(tw * 0.540), int(th * 0.130)), data["phone"], fill=text_color, font=font_medium)
-    if data["region"]:
-        draw.text((int(tw * 0.540), int(th * 0.260)), data["region"], fill=text_color, font=font_small)
-    if data["subcity"]:
-        draw.text((int(tw * 0.540), int(th * 0.360)), data["subcity"], fill=text_color, font=font_small)
-    if data["woreda"]:
-        draw.text((int(tw * 0.540), int(th * 0.460)), data["woreda"], fill=text_color, font=font_small)
-    if data["fin"]:
-        draw.text((int(tw * 0.540), int(th * 0.710)), data["fin"], fill=text_color, font=font_bold)
-
-    # PASTE PHOTO
+    # FRONT CARD OVERLAYS
+    # Photo placement
     if os.path.exists(photo_path):
         photo = Image.open(photo_path).convert("RGBA")
-        pw, ph = int(tw * 0.160), int(th * 0.600)
+        pw, ph = int(tw * 0.165), int(th * 0.620)
         photo = photo.resize((pw, ph), Image.Resampling.LANCZOS)
-        template.paste(photo, (int(tw * 0.020), int(th * 0.215)), photo if photo.mode == 'RGBA' else None)
+        template.paste(photo, (int(tw * 0.022), int(th * 0.220)), photo if photo.mode == 'RGBA' else None)
 
-    # PASTE QR CODE
+    # Names (Amharic & English)
+    if data["name_am"]:
+        draw.text((int(tw * 0.205), int(th * 0.225)), data["name_am"], fill=text_color, font=font_large)
+    if data["name_en"]:
+        draw.text((int(tw * 0.205), int(th * 0.280)), data["name_en"], fill=text_color, font=font_medium)
+
+    # Date of Birth
+    if data["dob"]:
+        draw.text((int(tw * 0.205), int(th * 0.380)), data["dob"], fill=text_color, font=font_medium)
+
+    # Sex
+    if data["sex"]:
+        draw.text((int(tw * 0.205), int(th * 0.480)), data["sex"], fill=text_color, font=font_medium)
+
+    # FAN Number
+    if data["fan"]:
+        draw.text((int(tw * 0.205), int(th * 0.620)), data["fan"], fill=text_color, font=font_large)
+
+
+    # BACK CARD OVERLAYS
+    # QR Code
     if os.path.exists(qr_path):
         qr = Image.open(qr_path).convert("RGBA")
-        qw = int(tw * 0.240)
+        qw = int(tw * 0.230)
         qr = qr.resize((qw, qw), Image.Resampling.LANCZOS)
-        template.paste(qr, (int(tw * 0.735), int(th * 0.070)), qr if qr.mode == 'RGBA' else None)
+        template.paste(qr, (int(tw * 0.745), int(th * 0.080)), qr if qr.mode == 'RGBA' else None)
+
+    # Phone Number
+    if data["phone"]:
+        draw.text((int(tw * 0.540), int(th * 0.150)), data["phone"], fill=text_color, font=font_medium)
+
+    # Region / Subcity / Woreda
+    if data["region"]:
+        draw.text((int(tw * 0.540), int(th * 0.270)), data["region"], fill=text_color, font=font_small)
+    if data["subcity"]:
+        draw.text((int(tw * 0.540), int(th * 0.370)), data["subcity"], fill=text_color, font=font_small)
+    if data["woreda"]:
+        draw.text((int(tw * 0.540), int(th * 0.470)), data["woreda"], fill=text_color, font=font_small)
+
+    # FIN
+    if data["fin"]:
+        draw.text((int(tw * 0.540), int(th * 0.650)), data["fin"], fill=text_color, font=font_large)
 
     if bw_mode:
         template = template.convert("L").convert("RGB")
@@ -329,7 +383,6 @@ def process_print_choice(call):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
         mode_label = "Black & White" if is_bw else "Colored"
 
-        # 1. Send result to requesting user
         with open(output_pdf, "rb") as result:
             bot.send_document(
                 chat_id,
@@ -338,7 +391,6 @@ def process_print_choice(call):
                 parse_mode="Markdown"
             )
 
-        # 2. Automatically archive document to private channel
         if ARCHIVE_CHANNEL_ID:
             try:
                 user_display = f"@{user.username}" if user.username else f"{user.first_name} {user.last_name or ''}".strip()
@@ -387,10 +439,9 @@ if __name__ == "__main__":
     time.sleep(1)
     print("🚀 Fayda Bot Active & Running through PythonAnywhere Proxy...")
 
-    # Continuous reconnect loop in case PythonAnywhere proxy drops briefly
     while True:
         try:
             bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
         except Exception as e:
             print(f"⚠️ Proxy connection drop/error: {e}. Re-establishing connection in 5 seconds...")
-            time.sleep(5)
+            time.sleep(5)            time.sleep(5)
