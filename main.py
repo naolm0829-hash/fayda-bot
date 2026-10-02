@@ -8,15 +8,15 @@ import fitz  # PyMuPDF
 import pdfplumber
 from PIL import Image, ImageDraw, ImageFont
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"  # Put your new token from @BotFather here
-AUTHORIZED_USERS = [8657043630,
-                   7541697159]
+BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"
+AUTHORIZED_USERS = [8657043630, 7541697159]
 
 TEMPLATE_PATH = "template.jpg"
 FONT_PATH = "AbyssinicaSIL-Regular.ttf"
@@ -25,6 +25,9 @@ FONT_PATH = "AbyssinicaSIL-Regular.ttf"
 A4_WIDTH = 2480
 A4_HEIGHT = 3508
 TOP_MARGIN = 300
+
+# Global dictionary to hold pending jobs per user
+PENDING_JOBS = {}
 
 
 # ============================================================
@@ -96,19 +99,6 @@ def extract_fayda_data(pdf_path, work_dir):
     except Exception as e:
         print("Text parsing warning:", e)
 
-    # Defaults fallback if pdfplumber misses an individual string
-    if not data["name_am"]: data["name_am"] = "ሄሌን ሰርጌ በላይ"
-    if not data["name_en"]: data["name_en"] = "Helen Serge Belay"
-    if not data["dob"]:     data["dob"] = "26/12/2006 | 2014/Sep/01"
-    if not data["sex"]:     data["sex"] = "ሴት | Female"
-    if not data["fan"]:     data["fan"] = "3861 7398 1536 5185"
-    if not data["fin"]:     data["fin"] = "FIN 7085 2761 0659"
-    if not data["phone"]:   data["phone"] = "0962064219"
-    if not data["region"]:  data["region"] = "ኦሮሚያ | Oromia"
-    if not data["subcity"]: data["subcity"] = "ባሌ | Bale"
-    if not data["woreda"]:  data["woreda"] = "ደሎ መና | Delo Mena"
-
-    # Extract high-res Photo and QR Code images
     doc = fitz.open(pdf_path)
     page = doc[0]
     
@@ -147,10 +137,10 @@ def extract_fayda_data(pdf_path, work_dir):
 
 
 # ============================================================
-# 2. PRECISE CLEANUP & TEMPLATE DRAWING
+# 2. DRAW ON BLANK TEMPLATE
 # ============================================================
 
-def build_custom_template_id(data, photo_path, qr_path, work_dir):
+def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False):
     if not os.path.exists(TEMPLATE_PATH):
         raise FileNotFoundError("template.jpg file missing from repository!")
 
@@ -158,56 +148,53 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir):
     tw, th = template.size
     draw = ImageDraw.Draw(template)
 
-    card_bg = (235, 247, 238)
+    font_bold = ImageFont.truetype(FONT_PATH, int(th * 0.042))
+    font_medium = ImageFont.truetype(FONT_PATH, int(th * 0.034))
+    font_small = ImageFont.truetype(FONT_PATH, int(th * 0.028))
 
-    # Erase sample text fields only (keeps static labels intact)
-    draw.rectangle([int(tw*0.190), int(th*0.250), int(tw*0.350), int(th*0.350)], fill=card_bg)
-    draw.rectangle([int(tw*0.190), int(th*0.420), int(tw*0.350), int(th*0.480)], fill=card_bg)
-    draw.rectangle([int(tw*0.190), int(th*0.530), int(tw*0.300), int(th*0.580)], fill=card_bg)
-    draw.rectangle([int(tw*0.190), int(th*0.680), int(tw*0.350), int(th*0.740)], fill=card_bg)
-    
-    draw.rectangle([int(tw*0.535), int(th*0.120), int(tw*0.680), int(th*0.180)], fill=card_bg)
-    draw.rectangle([int(tw*0.535), int(th*0.250), int(tw*0.680), int(th*0.550)], fill=card_bg)
-    draw.rectangle([int(tw*0.535), int(th*0.700), int(tw*0.710), int(th*0.770)], fill=card_bg)
+    text_color = (20, 20, 20)
 
-    # Erase photo and QR placeholder areas
-    draw.rectangle([int(tw*0.018), int(th*0.210), int(tw*0.180), int(th*0.820)], fill=card_bg)
-    draw.rectangle([int(tw*0.730), int(th*0.060), int(tw*0.980), int(th*0.820)], fill=card_bg)
+    # --- FRONT SIDE TEXT ---
+    if data["name_am"]:
+        draw.text((int(tw * 0.192), int(th * 0.250)), data["name_am"], fill=text_color, font=font_bold)
+    if data["name_en"]:
+        draw.text((int(tw * 0.192), int(th * 0.300)), data["name_en"], fill=text_color, font=font_medium)
+    if data["dob"]:
+        draw.text((int(tw * 0.192), int(th * 0.430)), data["dob"], fill=text_color, font=font_small)
+    if data["sex"]:
+        draw.text((int(tw * 0.192), int(th * 0.540)), data["sex"], fill=text_color, font=font_small)
+    if data["fan"]:
+        draw.text((int(tw * 0.192), int(th * 0.690)), data["fan"], fill=text_color, font=font_bold)
 
-    # Fonts
-    font_bold = ImageFont.truetype(FONT_PATH, int(th*0.040))
-    font_medium = ImageFont.truetype(FONT_PATH, int(th*0.032))
-    font_small = ImageFont.truetype(FONT_PATH, int(th*0.026))
+    # --- BACK SIDE TEXT ---
+    if data["phone"]:
+        draw.text((int(tw * 0.540), int(th * 0.130)), data["phone"], fill=text_color, font=font_medium)
+    if data["region"]:
+        draw.text((int(tw * 0.540), int(th * 0.260)), data["region"], fill=text_color, font=font_small)
+    if data["subcity"]:
+        draw.text((int(tw * 0.540), int(th * 0.360)), data["subcity"], fill=text_color, font=font_small)
+    if data["woreda"]:
+        draw.text((int(tw * 0.540), int(th * 0.460)), data["woreda"], fill=text_color, font=font_small)
+    if data["fin"]:
+        draw.text((int(tw * 0.540), int(th * 0.710)), data["fin"], fill=text_color, font=font_bold)
 
-    text_color = (10, 10, 10)
-
-    # Front Side Text
-    draw.text((int(tw*0.192), int(th*0.255)), data["name_am"], fill=text_color, font=font_bold)
-    draw.text((int(tw*0.192), int(th*0.300)), data["name_en"], fill=text_color, font=font_medium)
-    draw.text((int(tw*0.192), int(th*0.430)), data["dob"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.192), int(th*0.540)), data["sex"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.192), int(th*0.690)), data["fan"], fill=text_color, font=font_bold)
-
-    # Back Side Text
-    draw.text((int(tw*0.540), int(th*0.130)), data["phone"], fill=text_color, font=font_medium)
-    draw.text((int(tw*0.540), int(th*0.260)), data["region"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.540), int(th*0.360)), data["subcity"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.540), int(th*0.460)), data["woreda"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.540), int(th*0.710)), data["fin"], fill=text_color, font=font_bold)
-
-    # Photo Overlay
+    # --- PASTE PHOTO ---
     if os.path.exists(photo_path):
         photo = Image.open(photo_path).convert("RGBA")
         pw, ph = int(tw * 0.160), int(th * 0.600)
         photo = photo.resize((pw, ph), Image.Resampling.LANCZOS)
-        template.paste(photo, (int(tw*0.020), int(th*0.215)), photo if photo.mode == 'RGBA' else None)
+        template.paste(photo, (int(tw * 0.020), int(th * 0.215)), photo if photo.mode == 'RGBA' else None)
 
-    # QR Code Overlay
+    # --- PASTE QR CODE ---
     if os.path.exists(qr_path):
         qr = Image.open(qr_path).convert("RGBA")
         qw = int(tw * 0.240)
         qr = qr.resize((qw, qw), Image.Resampling.LANCZOS)
-        template.paste(qr, (int(tw*0.735), int(th*0.070)), qr if qr.mode == 'RGBA' else None)
+        template.paste(qr, (int(tw * 0.735), int(th * 0.070)), qr if qr.mode == 'RGBA' else None)
+
+    # Convert to Black & White grayscale if requested
+    if bw_mode:
+        template = template.convert("L").convert("RGB")
 
     output_card = os.path.join(work_dir, "final_id_card.png")
     template.save(output_card, "PNG", dpi=(300, 300))
@@ -237,7 +224,7 @@ def create_a4_sheet(card_image_path, output_pdf):
 
 
 # ============================================================
-# BOT HANDLERS
+# BOT HANDLERS & CALLBACKS
 # ============================================================
 
 @bot.message_handler(commands=["start"])
@@ -249,19 +236,16 @@ def start_command(message):
 
 
 @bot.message_handler(content_types=["document"])
-def process_pdf(message):
+def handle_pdf_upload(message):
     if not authorized(message.from_user.id):
         bot.reply_to(message, "⛔ Access restricted.")
         return
-
-    status = bot.reply_to(message, "⏳ *Generating Clean ID Card...*", parse_mode="Markdown")
 
     job_id = uuid.uuid4().hex
     work_dir = os.path.join(os.getcwd(), "jobs", job_id)
     os.makedirs(work_dir, exist_ok=True)
 
     input_pdf = os.path.join(work_dir, "input.pdf")
-    output_pdf = os.path.join(work_dir, "A4_Print_Ready.pdf")
 
     try:
         file_info = bot.get_file(message.document.file_id)
@@ -270,28 +254,79 @@ def process_pdf(message):
         with open(input_pdf, "wb") as f:
             f.write(file_bytes)
 
+        # Store job details pending user choice
+        PENDING_JOBS[job_id] = {
+            "work_dir": work_dir,
+            "input_pdf": input_pdf,
+            "chat_id": message.chat.id
+        }
+
+        # Create inline keyboard for Color mode choice
+        markup = InlineKeyboardMarkup()
+        btn_color = InlineKeyboardButton("🎨 Colored", callback_data=f"mode_color:{job_id}")
+        btn_bw = InlineKeyboardButton("🔳 Black & White", callback_data=f"mode_bw:{job_id}")
+        markup.add(btn_color, btn_bw)
+
+        bot.reply_to(
+            message,
+            "📄 *PDF Received!*\nPlease select your preferred print mode:",
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+
+    except Exception as error:
+        print("Error saving document:", error)
+        bot.reply_to(message, f"❌ *Error uploading PDF:* `{str(error)}`", parse_mode="Markdown")
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("mode_"))
+def process_print_choice(call):
+    mode, job_id = call.data.split(":")
+    is_bw = (mode == "mode_bw")
+
+    if job_id not in PENDING_JOBS:
+        bot.answer_callback_query(call.id, "Session expired. Please re-upload your PDF.")
+        return
+
+    job = PENDING_JOBS.pop(job_id)
+    work_dir = job["work_dir"]
+    input_pdf = job["input_pdf"]
+    chat_id = job["chat_id"]
+
+    bot.edit_message_text(
+        "⏳ *Generating Print-Ready ID Card...*",
+        chat_id=chat_id,
+        message_id=call.message.message_id,
+        parse_mode="Markdown"
+    )
+
+    output_pdf = os.path.join(work_dir, "A4_Print_Ready.pdf")
+
+    try:
         extracted_data, photo_p, qr_p = extract_fayda_data(input_pdf, work_dir)
-        card_image = build_custom_template_id(extracted_data, photo_p, qr_p, work_dir)
+        card_image = build_custom_template_id(extracted_data, photo_p, qr_p, work_dir, bw_mode=is_bw)
         create_a4_sheet(card_image, output_pdf)
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+        mode_label = "Black & White" if is_bw else "Colored"
 
         with open(output_pdf, "rb") as result:
             bot.send_document(
-                message.chat.id,
+                chat_id,
                 result,
-                caption=f"✅ *Clean Print-Ready ID Generated!*\n⏰ {timestamp}",
+                caption=f"✅ *{mode_label} Print-Ready ID Generated!*\n⏰ {timestamp}",
                 parse_mode="Markdown"
             )
 
         try:
-            bot.delete_message(message.chat.id, status.message_id)
+            bot.delete_message(chat_id, call.message.message_id)
         except Exception:
             pass
 
     except Exception as error:
-        print("Error:", error)
-        bot.send_message(message.chat.id, f"❌ *Error:* `{str(error)}`", parse_mode="Markdown")
+        print("Processing error:", error)
+        bot.send_message(chat_id, f"❌ *Error:* `{str(error)}`", parse_mode="Markdown")
 
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
