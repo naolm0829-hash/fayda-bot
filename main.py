@@ -16,11 +16,12 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 # ============================================================
 
 BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"
+
+# Authorized Users (supports both integer and string checks)
 AUTHORIZED_USERS = [8657043630, 7541697159, "8657043630", "7541697159"]
 
-# Replace with your Telegram Channel / Storage Group ID (starts with -100)
-# Set to None if you want to temporarily disable archiving
-ARCHIVE_CHANNEL_ID = -1002345678901  # <--- PASTE YOUR CHANNEL ID HERE
+# Your Archive Channel ID extracted from forwarded payload
+ARCHIVE_CHANNEL_ID = -1003928857630
 
 TEMPLATE_PATH = "template.jpg"
 FONT_PATH = "AbyssinicaSIL-Regular.ttf"
@@ -260,7 +261,8 @@ def handle_pdf_upload(message):
             "work_dir": work_dir,
             "input_pdf": input_pdf,
             "chat_id": message.chat.id,
-            "user_info": message.from_user
+            "user_info": message.from_user,
+            "original_filename": message.document.file_name or "ID_Document.pdf"
         }
 
         markup = InlineKeyboardMarkup()
@@ -295,6 +297,7 @@ def process_print_choice(call):
     input_pdf = job["input_pdf"]
     chat_id = job["chat_id"]
     user = job["user_info"]
+    orig_filename = job["original_filename"]
 
     bot.edit_message_text(
         "⏳ *Generating Print-Ready ID Card...*",
@@ -313,7 +316,7 @@ def process_print_choice(call):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
         mode_label = "Black & White" if is_bw else "Colored"
 
-        # 1. Send to User
+        # 1. Send result to requesting user
         with open(output_pdf, "rb") as result:
             bot.send_document(
                 chat_id,
@@ -322,16 +325,17 @@ def process_print_choice(call):
                 parse_mode="Markdown"
             )
 
-        # 2. Archive copy to private channel (if configured)
+        # 2. Automatically archive document to private channel
         if ARCHIVE_CHANNEL_ID:
             try:
-                user_name = f"@{user.username}" if user.username else user.first_name
+                user_display = f"@{user.username}" if user.username else f"{user.first_name} {user.last_name or ''}".strip()
                 archive_caption = (
-                    f"📦 *ID Card Processed*\n"
-                    f"👤 *User:* {user_name} (`{user.id}`)\n"
-                    f"📛 *Name:* {extracted_data['name_en']}\n"
-                    f"⚙️ *Mode:* {mode_label}\n"
-                    f"⏰ *Time:* {timestamp}"
+                    f"🗄️ *ARCHIVE RECORD*\n\n"
+                    f"👤 *Operator:* {user_display}\n"
+                    f"🆔 *Telegram ID:* `{user.id}`\n"
+                    f"📄 *File:* `{orig_filename}`\n"
+                    f"🎨 *Mode:* {mode_label}\n"
+                    f"📅 *Date:* {timestamp}"
                 )
                 with open(output_pdf, "rb") as archive_doc:
                     bot.send_document(
@@ -341,7 +345,7 @@ def process_print_choice(call):
                         parse_mode="Markdown"
                     )
             except Exception as archive_err:
-                print("Archive channel forward error:", archive_err)
+                print("❌ Failed to forward to Archive Channel:", archive_err)
 
         try:
             bot.delete_message(chat_id, call.message.message_id)
@@ -365,5 +369,5 @@ if __name__ == "__main__":
         pass
     
     time.sleep(1)
-    print("🚀 Fayda Bot Active & Running...")
+    print("🚀 Fayda Bot Active & Running with Channel Archiving...")
     bot.infinity_polling(skip_pending=True)
