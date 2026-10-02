@@ -3,11 +3,13 @@ import shutil
 import uuid
 import datetime
 import urllib.request
+import time
 
 import fitz  # PyMuPDF
 import pdfplumber
 from PIL import Image, ImageDraw, ImageFont
 import telebot
+from telebot import apihelper
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -20,7 +22,7 @@ BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"
 # Authorized Users (supports both integer and string checks)
 AUTHORIZED_USERS = [8657043630, 7541697159, "8657043630", "7541697159"]
 
-# Your Archive Channel ID extracted from forwarded payload
+# Your Archive Channel ID
 ARCHIVE_CHANNEL_ID = -1003928857630
 
 TEMPLATE_PATH = "template.jpg"
@@ -32,6 +34,17 @@ A4_HEIGHT = 3508
 TOP_MARGIN = 300
 
 PENDING_JOBS = {}
+
+
+# ============================================================
+# PYTHONANYWHERE PROXY SETUP
+# ============================================================
+
+# Configure proxy settings for PythonAnywhere free account servers
+apihelper.proxy = {
+    'http': 'http://proxy.server:3128',
+    'https': 'http://proxy.server:3128'
+}
 
 
 # ============================================================
@@ -360,8 +373,11 @@ def process_print_choice(call):
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+# ============================================================
+# MAIN EXECUTION LOOP WITH AUTO-RECONNECT
+# ============================================================
+
 if __name__ == "__main__":
-    import time
     print("🚀 Cleaning previous Telegram sessions...")
     try:
         bot.remove_webhook()
@@ -369,5 +385,12 @@ if __name__ == "__main__":
         pass
     
     time.sleep(1)
-    print("🚀 Fayda Bot Active & Running with Channel Archiving...")
-    bot.infinity_polling(skip_pending=True)
+    print("🚀 Fayda Bot Active & Running through PythonAnywhere Proxy...")
+
+    # Continuous reconnect loop in case PythonAnywhere proxy drops briefly
+    while True:
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"⚠️ Proxy connection drop/error: {e}. Re-establishing connection in 5 seconds...")
+            time.sleep(5)
