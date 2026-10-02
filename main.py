@@ -16,7 +16,11 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 # ============================================================
 
 BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"
-AUTHORIZED_USERS = [8657043630, 7541697159]
+AUTHORIZED_USERS = [8657043630, 7541697159, "8657043630", "7541697159"]
+
+# Replace with your Telegram Channel / Storage Group ID (starts with -100)
+# Set to None if you want to temporarily disable archiving
+ARCHIVE_CHANNEL_ID = -1002345678901  # <--- PASTE YOUR CHANNEL ID HERE
 
 TEMPLATE_PATH = "template.jpg"
 FONT_PATH = "AbyssinicaSIL-Regular.ttf"
@@ -26,7 +30,6 @@ A4_WIDTH = 2480
 A4_HEIGHT = 3508
 TOP_MARGIN = 300
 
-# Global dictionary to hold pending jobs per user
 PENDING_JOBS = {}
 
 
@@ -49,7 +52,7 @@ ensure_amharic_font()
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def authorized(user_id):
-    return user_id in AUTHORIZED_USERS
+    return user_id in AUTHORIZED_USERS or str(user_id) in AUTHORIZED_USERS
 
 
 # ============================================================
@@ -154,7 +157,7 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False)
 
     text_color = (20, 20, 20)
 
-    # --- FRONT SIDE TEXT ---
+    # FRONT SIDE TEXT
     if data["name_am"]:
         draw.text((int(tw * 0.192), int(th * 0.250)), data["name_am"], fill=text_color, font=font_bold)
     if data["name_en"]:
@@ -166,7 +169,7 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False)
     if data["fan"]:
         draw.text((int(tw * 0.192), int(th * 0.690)), data["fan"], fill=text_color, font=font_bold)
 
-    # --- BACK SIDE TEXT ---
+    # BACK SIDE TEXT
     if data["phone"]:
         draw.text((int(tw * 0.540), int(th * 0.130)), data["phone"], fill=text_color, font=font_medium)
     if data["region"]:
@@ -178,21 +181,20 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False)
     if data["fin"]:
         draw.text((int(tw * 0.540), int(th * 0.710)), data["fin"], fill=text_color, font=font_bold)
 
-    # --- PASTE PHOTO ---
+    # PASTE PHOTO
     if os.path.exists(photo_path):
         photo = Image.open(photo_path).convert("RGBA")
         pw, ph = int(tw * 0.160), int(th * 0.600)
         photo = photo.resize((pw, ph), Image.Resampling.LANCZOS)
         template.paste(photo, (int(tw * 0.020), int(th * 0.215)), photo if photo.mode == 'RGBA' else None)
 
-    # --- PASTE QR CODE ---
+    # PASTE QR CODE
     if os.path.exists(qr_path):
         qr = Image.open(qr_path).convert("RGBA")
         qw = int(tw * 0.240)
         qr = qr.resize((qw, qw), Image.Resampling.LANCZOS)
         template.paste(qr, (int(tw * 0.735), int(th * 0.070)), qr if qr.mode == 'RGBA' else None)
 
-    # Convert to Black & White grayscale if requested
     if bw_mode:
         template = template.convert("L").convert("RGB")
 
@@ -254,14 +256,13 @@ def handle_pdf_upload(message):
         with open(input_pdf, "wb") as f:
             f.write(file_bytes)
 
-        # Store job details pending user choice
         PENDING_JOBS[job_id] = {
             "work_dir": work_dir,
             "input_pdf": input_pdf,
-            "chat_id": message.chat.id
+            "chat_id": message.chat.id,
+            "user_info": message.from_user
         }
 
-        # Create inline keyboard for Color mode choice
         markup = InlineKeyboardMarkup()
         btn_color = InlineKeyboardButton("🎨 Colored", callback_data=f"mode_color:{job_id}")
         btn_bw = InlineKeyboardButton("🔳 Black & White", callback_data=f"mode_bw:{job_id}")
@@ -293,6 +294,7 @@ def process_print_choice(call):
     work_dir = job["work_dir"]
     input_pdf = job["input_pdf"]
     chat_id = job["chat_id"]
+    user = job["user_info"]
 
     bot.edit_message_text(
         "⏳ *Generating Print-Ready ID Card...*",
@@ -311,6 +313,7 @@ def process_print_choice(call):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
         mode_label = "Black & White" if is_bw else "Colored"
 
+        # 1. Send to User
         with open(output_pdf, "rb") as result:
             bot.send_document(
                 chat_id,
@@ -318,6 +321,27 @@ def process_print_choice(call):
                 caption=f"✅ *{mode_label} Print-Ready ID Generated!*\n⏰ {timestamp}",
                 parse_mode="Markdown"
             )
+
+        # 2. Archive copy to private channel (if configured)
+        if ARCHIVE_CHANNEL_ID:
+            try:
+                user_name = f"@{user.username}" if user.username else user.first_name
+                archive_caption = (
+                    f"📦 *ID Card Processed*\n"
+                    f"👤 *User:* {user_name} (`{user.id}`)\n"
+                    f"📛 *Name:* {extracted_data['name_en']}\n"
+                    f"⚙️ *Mode:* {mode_label}\n"
+                    f"⏰ *Time:* {timestamp}"
+                )
+                with open(output_pdf, "rb") as archive_doc:
+                    bot.send_document(
+                        ARCHIVE_CHANNEL_ID,
+                        archive_doc,
+                        caption=archive_caption,
+                        parse_mode="Markdown"
+                    )
+            except Exception as archive_err:
+                print("Archive channel forward error:", archive_err)
 
         try:
             bot.delete_message(chat_id, call.message.message_id)
