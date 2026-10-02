@@ -14,7 +14,7 @@ import telebot
 # CONFIGURATION
 # ============================================================
 
-BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"
+BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"  # Put your new token from @BotFather here
 AUTHORIZED_USERS = [8657043630]
 
 TEMPLATE_PATH = "template.jpg"
@@ -146,7 +146,7 @@ def extract_fayda_data(pdf_path, work_dir):
 
 
 # ============================================================
-# 2. DYNAMICALLY CLEAN & FILL TEMPLATE
+# 2. PRECISE CLEANUP & TEMPLATE DRAWING
 # ============================================================
 
 def build_custom_template_id(data, photo_path, qr_path, work_dir):
@@ -157,58 +157,56 @@ def build_custom_template_id(data, photo_path, qr_path, work_dir):
     tw, th = template.size
     draw = ImageDraw.Draw(template)
 
-    # Base background fill color matching Fayda card body
-    card_bg_color = (235, 247, 238)
+    card_bg = (235, 247, 238)
 
-    # ------------------------------------------------------------
-    # DYNAMIC SAMPLE CLEANUP (Erases sample images/text)
-    # ------------------------------------------------------------
-    # Front photo area
-    draw.rectangle([int(tw*0.015), int(th*0.20), int(tw*0.19), int(th*0.90)], fill=card_bg_color)
-    # Front text area
-    draw.rectangle([int(tw*0.19), int(th*0.22), int(tw*0.37), int(th*0.80)], fill=card_bg_color)
-    # Small photo
-    draw.rectangle([int(tw*0.37), int(th*0.68), int(tw*0.46), int(th*0.95)], fill=card_bg_color)
-    # Back text area
-    draw.rectangle([int(tw*0.53), int(th*0.08), int(tw*0.72), int(th*0.85)], fill=card_bg_color)
-    # Back QR area
-    draw.rectangle([int(tw*0.73), int(th*0.05), int(tw*0.99), int(th*0.85)], fill=card_bg_color)
+    # Erase sample text fields only (keeps static labels intact)
+    draw.rectangle([int(tw*0.190), int(th*0.250), int(tw*0.350), int(th*0.350)], fill=card_bg)
+    draw.rectangle([int(tw*0.190), int(th*0.420), int(tw*0.350), int(th*0.480)], fill=card_bg)
+    draw.rectangle([int(tw*0.190), int(th*0.530), int(tw*0.300), int(th*0.580)], fill=card_bg)
+    draw.rectangle([int(tw*0.190), int(th*0.680), int(tw*0.350), int(th*0.740)], fill=card_bg)
+    
+    draw.rectangle([int(tw*0.535), int(th*0.120), int(tw*0.680), int(th*0.180)], fill=card_bg)
+    draw.rectangle([int(tw*0.535), int(th*0.250), int(tw*0.680), int(th*0.550)], fill=card_bg)
+    draw.rectangle([int(tw*0.535), int(th*0.700), int(tw*0.710), int(th*0.770)], fill=card_bg)
 
-    # Load Fonts
-    font_bold = ImageFont.truetype(FONT_PATH, int(th*0.035))
-    font_medium = ImageFont.truetype(FONT_PATH, int(th*0.028))
-    font_small = ImageFont.truetype(FONT_PATH, int(th*0.024))
+    # Erase photo and QR placeholder areas
+    draw.rectangle([int(tw*0.018), int(th*0.210), int(tw*0.180), int(th*0.820)], fill=card_bg)
+    draw.rectangle([int(tw*0.730), int(th*0.060), int(tw*0.980), int(th*0.820)], fill=card_bg)
 
-    text_color = (0, 0, 0)
+    # Fonts
+    font_bold = ImageFont.truetype(FONT_PATH, int(th*0.040))
+    font_medium = ImageFont.truetype(FONT_PATH, int(th*0.032))
+    font_small = ImageFont.truetype(FONT_PATH, int(th*0.026))
 
-    # --- FRONT SIDE PLACEHOLDERS ---
-    draw.text((int(tw*0.195), int(th*0.23)), data["name_am"], fill=text_color, font=font_bold)
-    draw.text((int(tw*0.195), int(th*0.28)), data["name_en"], fill=text_color, font=font_medium)
-    draw.text((int(tw*0.195), int(th*0.38)), data["dob"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.195), int(th*0.48)), data["sex"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.195), int(th*0.60)), data["fan"], fill=text_color, font=font_bold)
+    text_color = (10, 10, 10)
 
-    # --- BACK SIDE PLACEHOLDERS ---
-    draw.text((int(tw*0.54), int(th*0.12)), data["phone"], fill=text_color, font=font_medium)
-    draw.text((int(tw*0.54), int(th*0.24)), data["region"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.54), int(th*0.36)), data["subcity"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.54), int(th*0.48)), data["woreda"], fill=text_color, font=font_small)
-    draw.text((int(tw*0.54), int(th*0.64)), data["fin"], fill=text_color, font=font_bold)
+    # Front Side Text
+    draw.text((int(tw*0.192), int(th*0.255)), data["name_am"], fill=text_color, font=font_bold)
+    draw.text((int(tw*0.192), int(th*0.300)), data["name_en"], fill=text_color, font=font_medium)
+    draw.text((int(tw*0.192), int(th*0.430)), data["dob"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.192), int(th*0.540)), data["sex"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.192), int(th*0.690)), data["fan"], fill=text_color, font=font_bold)
 
-    # --- PHOTO FRAME OVERLAY ---
+    # Back Side Text
+    draw.text((int(tw*0.540), int(th*0.130)), data["phone"], fill=text_color, font=font_medium)
+    draw.text((int(tw*0.540), int(th*0.260)), data["region"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.540), int(th*0.360)), data["subcity"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.540), int(th*0.460)), data["woreda"], fill=text_color, font=font_small)
+    draw.text((int(tw*0.540), int(th*0.710)), data["fin"], fill=text_color, font=font_bold)
+
+    # Photo Overlay
     if os.path.exists(photo_path):
         photo = Image.open(photo_path).convert("RGBA")
-        photo_w = int(tw * 0.175)
-        photo_h = int(th * 0.68)
-        photo = photo.resize((photo_w, photo_h), Image.Resampling.LANCZOS)
-        template.paste(photo, (int(tw*0.015), int(th*0.21)), photo if photo.mode == 'RGBA' else None)
+        pw, ph = int(tw * 0.160), int(th * 0.600)
+        photo = photo.resize((pw, ph), Image.Resampling.LANCZOS)
+        template.paste(photo, (int(tw*0.020), int(th*0.215)), photo if photo.mode == 'RGBA' else None)
 
-    # --- QR CODE OVERLAY ---
+    # QR Code Overlay
     if os.path.exists(qr_path):
         qr = Image.open(qr_path).convert("RGBA")
-        qr_size = int(th * 0.78)
-        qr = qr.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
-        template.paste(qr, (int(tw*0.73), int(th*0.06)), qr if qr.mode == 'RGBA' else None)
+        qw = int(tw * 0.240)
+        qr = qr.resize((qw, qw), Image.Resampling.LANCZOS)
+        template.paste(qr, (int(tw*0.735), int(th*0.070)), qr if qr.mode == 'RGBA' else None)
 
     output_card = os.path.join(work_dir, "final_id_card.png")
     template.save(output_card, "PNG", dpi=(300, 300))
@@ -246,7 +244,7 @@ def start_command(message):
     if not authorized(message.from_user.id):
         bot.reply_to(message, "⛔ Access restricted.")
         return
-    bot.send_message(message.chat.id, "🖨️️ *Fayda Card Bot Active*\nSend a PDF file to process.")
+    bot.send_message(message.chat.id, "🖨 *Fayda Card Bot Active*\nSend a PDF file to process.")
 
 
 @bot.message_handler(content_types=["document"])
@@ -306,12 +304,6 @@ if __name__ == "__main__":
     except Exception:
         pass
     
-    time.sleep(2)  # Give Telegram server time to register disconnection
+    time.sleep(1)
     print("🚀 Fayda Bot Active & Running...")
-    
-    bot.infinity_polling(
-        skip_pending=True,
-        timeout=60,
-        long_polling_timeout=60,
-        restart_on_change=False
-    )
+    bot.infinity_polling(skip_pending=True)
