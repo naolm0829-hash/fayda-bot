@@ -15,7 +15,8 @@ import telebot
 # ============================================================
 
 BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"  # Put your new token from @BotFather here
-AUTHORIZED_USERS = [8657043630]
+AUTHORIZED_USERS = [8657043630
+                   7541697159]
 
 TEMPLATE_PATH = "template.jpg"
 FONT_PATH = "AbyssinicaSIL-Regular.ttf"
