@@ -62,7 +62,7 @@ def authorized(user_id):
 
 
 # ============================================================
-# RELIABLE FAYDA PDF TEXT PARSER
+# PARSE FAYDA PDF VALUES STRICTLY
 # ============================================================
 
 def extract_fayda_data(pdf_path, work_dir):
@@ -80,96 +80,78 @@ def extract_fayda_data(pdf_path, work_dir):
     }
 
     try:
-        # Extract full raw text using PyMuPDF first
         doc = fitz.open(pdf_path)
-        full_text = ""
-        for page in doc:
-            full_text += page.get_text() + "\n"
+        page = doc[0]
+        text = page.get_text("text")
         doc.close()
 
-        lines = [l.strip() for l in full_text.splitlines() if l.strip()]
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
 
-        # Alternative fallback via pdfplumber
-        if len(lines) < 5:
-            with pdfplumber.open(pdf_path) as pdf:
-                plumber_text = pdf.pages[0].extract_text() or ""
-                lines = [l.strip() for l in plumber_text.splitlines() if l.strip()]
+        for i, line in enumerate(lines):
+            # Extract Name (skip static header text)
+            if ("FULL NAME" in line.upper() or "ሙሉ ስም" in line) and i + 2 < len(lines):
+                data["name_am"] = lines[i+1]
+                data["name_en"] = lines[i+2]
 
-        # Parse data dynamically
-        for idx, line in enumerate(lines):
-            # FAN (16 digit format or preceded by FAN)
-            if "FAN" in line or "FCN" in line or "ፋን" in line:
-                fan_match = re.search(r'\d{4}\s?\d{4}\s?\d{4}\s?\d{4}', line)
+            # DOB
+            elif "DATE OF BIRTH" in line.upper() or "የትውልድ ቀን" in line:
+                match = re.search(r'\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}', text)
+                if match:
+                    data["dob"] = match.group(0)
+
+            # SEX
+            elif "SEX" in line.upper() and "ESEX" not in line.upper():
+                if i + 1 < len(lines):
+                    val = lines[i+1]
+                    if val.upper() in ["M", "MALE", "ወንድ"]:
+                        data["sex"] = "M / ወንድ"
+                    elif val.upper() in ["F", "FEMALE", "ሴት"]:
+                        data["sex"] = "F / ሴት"
+
+            # FAN / FCN (16 digits)
+            elif "FAN" in line.upper() or "FCN" in line.upper() or "ፋን" in line:
+                fan_match = re.search(r'\b\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\b', text)
                 if fan_match:
                     data["fan"] = fan_match.group(0)
-                elif idx + 1 < len(lines):
-                    data["fan"] = lines[idx+1]
 
             # FIN
-            elif "FIN" in line:
-                fin_match = re.search(r'[A-Z0-9]{8,12}', line)
+            elif "FIN" in line.upper():
+                fin_match = re.search(r'\b[A-Z0-9]{8,12}\b', line)
                 if fin_match:
                     data["fin"] = fin_match.group(0)
-                elif idx + 1 < len(lines):
-                    data["fin"] = lines[idx+1]
 
-            # Date of birth
-            elif "Date of Birth" in line or "የትውልድ ቀን" in line:
-                dob_match = re.search(r'\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}', line)
-                if dob_match:
-                    data["dob"] = dob_match.group(0)
-                elif idx + 1 < len(lines):
-                    data["dob"] = lines[idx+1]
+            # PHONE
+            elif "PHONE" in line.upper() or "ስልክ" in line:
+                ph = re.search(r'(\+?251|0)9\d{8}', text)
+                if ph:
+                    data["phone"] = ph.group(0)
 
-            # Sex / Gender
-            elif "Sex" in line or "ጾታ" in line:
-                if "Male" in line or "ወንድ" in line or "M" in line.split():
-                    data["sex"] = "ወንድ / Male"
-                elif "Female" in line or "ሴት" in line or "F" in line.split():
-                    data["sex"] = "ሴት / Female"
-                elif idx + 1 < len(lines):
-                    data["sex"] = lines[idx+1]
-
-            # Phone Number
-            elif "Phone" in line or "ስልክ" in line:
-                phone_match = re.search(r'(\+?251|0)\d{8,9}', line)
-                if phone_match:
-                    data["phone"] = phone_match.group(0)
-                elif idx + 1 < len(lines):
-                    data["phone"] = lines[idx+1]
-
-            # Address fields
-            elif "Region" in line or "ክልል" in line:
-                if idx + 1 < len(lines): data["region"] = lines[idx+1]
-            elif "Subcity" in line or "ክፍለ ከተማ" in line:
-                if idx + 1 < len(lines): data["subcity"] = lines[idx+1]
-            elif "Woreda" in line or "ወረዳ" in line:
-                if idx + 1 < len(lines): data["woreda"] = lines[idx+1]
-
-        # Extract names if present
-        for idx, line in enumerate(lines):
-            if "Full Name" in line or "ሙሉ ስም" in line:
-                if idx + 1 < len(lines): data["name_am"] = lines[idx+1]
-                if idx + 2 < len(lines): data["name_en"] = lines[idx+2]
+            # REGION / SUBCITY / WOREDA
+            elif "REGION" in line.upper() or "ክልል" in line:
+                if i + 1 < len(lines) and len(lines[i+1]) < 30:
+                    data["region"] = lines[i+1]
+            elif "SUBCITY" in line.upper() or "ክፍለ ከተማ" in line:
+                if i + 1 < len(lines) and len(lines[i+1]) < 30:
+                    data["subcity"] = lines[i+1]
+            elif "WOREDA" in line.upper() or "ወረዳ" in line:
+                if i + 1 < len(lines) and len(lines[i+1]) < 30:
+                    data["woreda"] = lines[i+1]
 
     except Exception as e:
         print("Parsing Exception:", e)
 
-    # Image Extraction (Photo & QR)
+    # Extract Photos
     doc = fitz.open(pdf_path)
     page = doc[0]
     photo_path = os.path.join(work_dir, "photo.png")
     qr_path = os.path.join(work_dir, "qr.png")
 
-    images = page.get_images(full=True)
     extracted_imgs = []
-
-    for img_info in images:
+    for img_info in page.get_images(full=True):
         xref = img_info[0]
         pix = fitz.Pixmap(doc, xref)
         if pix.colorspace and pix.colorspace.n != 3:
             pix = fitz.Pixmap(fitz.csRGB, pix)
-        
         save_file = os.path.join(work_dir, f"img_{xref}.png")
         pix.save(save_file)
         extracted_imgs.append((pix.width, pix.height, save_file))
@@ -193,64 +175,69 @@ def extract_fayda_data(pdf_path, work_dir):
 
 
 # ============================================================
-# TEMPLATE BUILDER WITH EXACT PIXEL POSITIONS
+# TEMPLATE BUILDER WITH CLEAN COORDINATES
 # ============================================================
 
 def build_custom_template_id(data, photo_path, qr_path, work_dir, bw_mode=False):
     if not os.path.exists(TEMPLATE_PATH):
-        raise FileNotFoundError("template.jpg file missing from repository!")
+        raise FileNotFoundError("template.jpg file missing!")
 
     template = Image.open(TEMPLATE_PATH).convert("RGB")
     tw, th = template.size
     draw = ImageDraw.Draw(template)
 
-    base_size = int(th * 0.032)
-    font_large = ImageFont.truetype(FONT_PATH, int(base_size * 1.25))
-    font_medium = ImageFont.truetype(FONT_PATH, base_size)
-    font_small = ImageFont.truetype(FONT_PATH, int(base_size * 0.85))
+    # Dynamic font sizing relative to exact height
+    f_large = ImageFont.truetype(FONT_PATH, int(th * 0.038))
+    f_med   = ImageFont.truetype(FONT_PATH, int(th * 0.030))
+    f_small = ImageFont.truetype(FONT_PATH, int(th * 0.025))
 
-    text_color = (10, 10, 10)
+    color = (0, 0, 0)
 
     # FRONT CARD OVERLAYS
     if os.path.exists(photo_path):
         photo = Image.open(photo_path).convert("RGBA")
-        pw, ph = int(tw * 0.165), int(th * 0.620)
+        pw, ph = int(tw * 0.150), int(th * 0.580)
         photo = photo.resize((pw, ph), Image.Resampling.LANCZOS)
-        template.paste(photo, (int(tw * 0.022), int(th * 0.220)), photo if photo.mode == 'RGBA' else None)
+        template.paste(photo, (int(tw * 0.025), int(th * 0.220)), photo if photo.mode == 'RGBA' else None)
 
+    # Names
     if data["name_am"]:
-        draw.text((int(tw * 0.205), int(th * 0.225)), data["name_am"], fill=text_color, font=font_large)
+        draw.text((int(tw * 0.190), int(th * 0.230)), data["name_am"], fill=color, font=f_large)
     if data["name_en"]:
-        draw.text((int(tw * 0.205), int(th * 0.280)), data["name_en"], fill=text_color, font=font_medium)
+        draw.text((int(tw * 0.190), int(th * 0.285)), data["name_en"], fill=color, font=f_med)
 
-    if data["dob"]:
-        draw.text((int(tw * 0.205), int(th * 0.380)), data["dob"], fill=text_color, font=font_medium)
-
+    # Sex & DOB
     if data["sex"]:
-        draw.text((int(tw * 0.205), int(th * 0.480)), data["sex"], fill=text_color, font=font_medium)
+        draw.text((int(tw * 0.190), int(th * 0.440)), data["sex"], fill=color, font=f_med)
+    if data["dob"]:
+        draw.text((int(tw * 0.330), int(th * 0.440)), data["dob"], fill=color, font=f_med)
 
+    # FAN
     if data["fan"]:
-        draw.text((int(tw * 0.205), int(th * 0.620)), data["fan"], fill=text_color, font=font_large)
+        draw.text((int(tw * 0.190), int(th * 0.650)), data["fan"], fill=color, font=f_large)
 
     # BACK CARD OVERLAYS
     if os.path.exists(qr_path):
         qr = Image.open(qr_path).convert("RGBA")
-        qw = int(tw * 0.230)
+        qw = int(tw * 0.220)
         qr = qr.resize((qw, qw), Image.Resampling.LANCZOS)
-        template.paste(qr, (int(tw * 0.745), int(th * 0.080)), qr if qr.mode == 'RGBA' else None)
+        template.paste(qr, (int(tw * 0.750), int(th * 0.100)), qr if qr.mode == 'RGBA' else None)
 
-    if data["phone"]:
-        draw.text((int(tw * 0.540), int(th * 0.150)), data["phone"], fill=text_color, font=font_medium)
-
+    # Region / Subcity / Woreda
     if data["region"]:
-        draw.text((int(tw * 0.540), int(th * 0.270)), data["region"], fill=text_color, font=font_small)
+        draw.text((int(tw * 0.530), int(th * 0.130)), data["region"], fill=color, font=f_small)
     if data["subcity"]:
-        draw.text((int(tw * 0.540), int(th * 0.370)), data["subcity"], fill=text_color, font=font_small)
+        draw.text((int(tw * 0.530), int(th * 0.240)), data["subcity"], fill=color, font=f_small)
     if data["woreda"]:
-        draw.text((int(tw * 0.540), int(th * 0.470)), data["woreda"], fill=text_color, font=font_small)
+        draw.text((int(tw * 0.530), int(th * 0.350)), data["woreda"], fill=color, font=f_small)
 
+    # Phone
+    if data["phone"]:
+        draw.text((int(tw * 0.530), int(th * 0.480)), data["phone"], fill=color, font=f_med)
+
+    # FIN
     if data["fin"]:
-        draw.text((int(tw * 0.540), int(th * 0.650)), data["fin"], fill=text_color, font=font_large)
+        draw.text((int(tw * 0.530), int(th * 0.680)), data["fin"], fill=color, font=f_large)
 
     if bw_mode:
         template = template.convert("L").convert("RGB")
