@@ -19,7 +19,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 # ============================================================
 
 BOT_TOKEN = "8556582041:AAFw7Pz2ysPaL4gSSwe1Sb-mvmgPGPbH3O0"
-AUTHORIZED_USERS = [8657043630, 7541697159, "8657043630", "7541697159"]
+AUTHORIZED_USERS = [8657043630, 7541697159, 7274301492, "8657043630", "7541697159", "7274301492" ]
 ARCHIVE_CHANNEL_ID = -1003928857630
 
 TEMPLATE_PATH = "template.jpg"
